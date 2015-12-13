@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>UTb</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
+  <script src="./keys.js"></script>
+</head>
+<body>
+
+
+<script>
+(function (global) {
+  var MAX_RESULTS_PER_REQUEST = 50;
+
+  var utb = {
+    apiKey: keys.apiKey,
+    clientId: keys.clientId,
+    scopes: keys.scopes,
+
+    subInfo: {},
+
+    channelList: [],
+    channelIds: [],
+
+    channelUploadList: [],
+    channelUploadListIds: [],
+
+    videoIds: [],
+
+    apiLoaded: function () {
+      // console.log('utb#apiLoaded');
+
+      gapi.client.setApiKey(this.apiKey);
+      setTimeout(_.bind(this.checkAuth, this), 1);
+    },
+
+    checkAuth: function (immediate) {
+      // console.log('utb#checkAuth');
+
+      if (immediate === undefined) {
+        immediate = true
+      }
+
+      gapi.auth.authorize({
+        client_id: this.clientId,
+        scope: this.scopes,
+        immediate: immediate
+      }, _.bind(this.handleAuthResult, this));
+    },
+
+    handleAuthResult: function (authResult) {
+      // console.log('utb#handleAuthResult');
+
+      var authorizeButton = document.getElementById('authorize-button');
+      if (authResult && !authResult.error) {
+        authorizeButton.style.visibility = 'hidden';
+        console.info('utb#Authorized');
+        this.makePlaylist();
+      } else {
+        authorizeButton.style.visibility = '';
+        authorizeButton.onclick = _.bind(this.handleAuthClick, this);
+      }
+    },
+
+    handleAuthClick: function () {
+      // console.log('utb#handleAuthResult');
+
+      this.checkAuth(false);
+      return false;
+    },
+
+    makePlaylist: function () {
+      // console.log('utb#makePlaylist');
+
+      var self = this;
+
+
+      console.info('utb#fetch subscription information');
+      this.getChannelList()
+          .then(function () {
+            console.info('utb#fetch updated videos');
+            return Promise.resolve();
+          })
+          .then(_.bind(this.getChannelVideos, this))
+          .then(function () {
+            console.info('utb#make playlist');
+            return Promise.resolve();
+          })
+          // .then(_.bind(this.makeCandidateList, this));
+          .then(function () {
+            console.info('utb#done');
+          });
+
+    },
+
+    extractVideoIds: function () {
+      // console.log('utb#extractVideoIds');
+
+      var self = this;
+
+      _.each(this.channelList, function (channel) {
+        self.channelIds.push(channel.snippet.resourceId.channelId);
+      });
+    },
+
+    _extractChannelIds: function (items) {
+      return _.map(items, function (item) {
+        return item.snippet.resourceId.channelId;
+      });
+    },
+
+    _getChannelInfo: function (items) {
+      var self = this;
+
+      _.each(items, function (item) {
+        self.subInfo[item.snippet.resourceId.channelId] = {
+          newItemCount: item.contentDetails.newItemCount
+        };
+      });
+    },
+
+    getChannelList: function (path, params) {
+      // console.log('utb#getChannelList');
+
+      var self = this;
+      var newPath = path || '/subscriptions';
+      var newParams = params || {
+        part: 'snippet,contentDetails',
+        mine: true
+      };
+
+      return this._request(newPath, newParams).then(function (res) {
+        self.channelIds = self.channelIds.concat(self._extractChannelIds(res.result.items));
+        self._getChannelInfo(res.result.items);
+
+        // [workaround] 이유는 알 수 없으나 totalResults의 갯수가 실제 채널 수보다 
+        // 1만큼 작게 나오는 문제가 있음
+        if (self.channelIds.length < res.result.pageInfo.totalResults - 1) {
+          return self.getChannelList(newPath, _.defaults({
+            pageToken: res.result.nextPageToken
+          }, newParams));
+        }
+      }, function (reason) {
+        console.log('Error: ' + reason.result.error.message);
+      });
+    },
+
+    removeNotUpdatedSubscriptions: function () {
+      // console.log('utb#removeNoUpdatedList');
+
+      var self = this;
+
+      this.channelIds = _.filter(this.channelIds, function (channelId) {
+        if (self.subInfo[channelId].newItemCount > 0) {
+          return true;
+        }
+      });
+    },
+
+    getChannelVideos: function () {
+      // console.log('utb#getChannelVideos');
+
+      this.removeNotUpdatedSubscriptions();
+
+      return this._getChannelUploadPlayListIds()
+                .then(_.bind(this._getChannelUploadedVideos, this));
+    },
+
+    _extractUploadsPlayListIds: function (items) {
+      return _.map(items, function (item) {
+        return item.contentDetails.relatedPlaylists.uploads;
+      });
+    },
+
+    _getChannelUploadPlayListIds: function (path, params) {
+      // console.log('utb#_getChannelUploadPlayListIds');
+
+      var self = this;
+      var newPath = path || '/channels';
+      var newParams = params || {
+        part: 'contentDetails',
+      };
+
+      var ids = _.first(this.channelIds, MAX_RESULTS_PER_REQUEST).join(',');
+      this.channelIds = _.rest(this.channelIds, MAX_RESULTS_PER_REQUEST);
+
+      return this._request(newPath, _.defaults({id: ids}, newParams)).then(function (res) {
+        self.channelUploadListIds =
+            self.channelUploadListIds.concat(self._extractUploadsPlayListIds(res.result.items));
+
+        if (self.channelIds.length > 0) {
+          return self._getChannelUploadPlayListIds(newPath, newParams);
+        }
+      }, function (reason) {
+        console.log('Error: ' + reason.result.error.message);
+      });
+    },
+
+    _getChannelUploadedVideos: function (path, params) {
+      // console.log('utb#_getChannelUploadedVideos');
+
+      var self = this;
+      var newPath = path || '/playlistItems';
+      var newParams = params || {
+        part: 'snippet',
+        maxResults: MAX_RESULTS_PER_REQUEST
+      };
+
+      var playlistId = _.first(this.channelUploadListIds);
+      this.channelUploadListIds = _.rest(this.channelUploadListIds);
+
+      return this._request(newPath, _.defaults({playlistId: playlistId}, newParams)).then(function (res) {
+        console.log(res.result);
+
+        if (self.channelUploadListIds.length > 0) {
+          // return self._getChannelUploadedVideos(newPath, newParams);
+        }
+
+      }, function (reason) {
+        console.log('Error: ' + reason.result.error.message);
+      });
+
+    },
+
+    makeCandidateList: function () {
+      // console.log('utb#makeCandidateList');
+    },
+
+    _request: function (path, params) {
+      // console.log('utb#_request');
+
+      var self = this;
+
+      params = _.extend({
+        maxResults: MAX_RESULTS_PER_REQUEST
+      }, params);
+
+      return gapi.client.request({
+        'path': '/youtube/v3' + path,
+        'params': params
+      });
+    }
+  };
+
+  global.utb = utb;
+})(window);
+
+function initialize() {
+  console.info('utb#start');
+  utb.apiLoaded();
+}
+
+</script>
+
+<button id="authorize-button" style="visibility: hidden">인증</button>
+
+<script src="https://apis.google.com/js/client.js?onload=initialize"></script>
+</body>
+</html>
