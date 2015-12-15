@@ -4,6 +4,8 @@
 	<title>UTb</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.10.6/moment.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/handlebars.js/4.0.5/handlebars.min.js"></script>
   <script src="./keys.js"></script>
 </head>
 <body>
@@ -12,11 +14,61 @@
 <script>
 (function (global) {
   var MAX_RESULTS_PER_REQUEST = 50;
+  var ACTIVITY_TYPE = {
+        BULLETIN: 'bulletin',
+        CHANNEL_ITEM: 'channelItem',
+        COMMENT: 'comment',
+        FAVORITE: 'favorite',
+        LIKE: 'like',
+        PLAYLIST_ITEM: 'playlistItem',
+        RECOMMENDATION: 'recommendation',
+        SOCIAL: 'social',
+        SUBSCRIPTION: 'subscription',
+        UPLOAD: 'upload'
+  };
+
+
+  var CONSTRAINTS = {
+    MAX_VIDEO_PLAYTIME: 10 * 60, // min
+    INCLUDE_RECOMMENDATION: false,
+    checkMaxLength: function (videoInfo) {
+      if (videoInfo.utbData.duration <= CONSTRAINTS.MAX_VIDEO_PLAYTIME) {
+        return true;
+      }
+    },
+    CHANNEL_EXCLUDED: [
+      'UCvc8kv-i5fvFTJBFAk6n1SA', // 생활코딩
+      'UClMlpXq4tDryAioZisO7JJQ', // 굿샷김프로
+      'UCsLdjJ-pztJ7xV1axh14p5Q', // Yonsei HCI Lab,
+      'UCEBb1b_L6zDS3xTUrIALZOw', // MIT OpenCourseWare
+    ],
+    checkExcludedChannel: function (videoInfo) {
+      var index = _.indexOf(CONSTRAINTS.CHANNEL_EXCLUDED, videoInfo.snippet.channelId);
+
+      if (index < 0) {
+        return true;
+      }
+    },
+    AFTER_DAYS: 2,
+    checkAfterDays: function (videoInfo) {
+      var baseDate = moment().subtract(CONSTRAINTS.AFTER_DAYS, 'days');
+      var pubDate = moment(videoInfo.snippet.publishedAt);
+      return baseDate.isBefore(pubDate);
+    }
+  };
 
   var utb = {
     apiKey: keys.apiKey,
     clientId: keys.clientId,
     scopes: keys.scopes,
+
+    activities: [],
+    video_activities: {},
+
+    activitiy_loaded: 0,
+    video_loaded: 0,
+
+    totalPlayTime: 0,
 
     apiLoaded: function () {
       // console.log('utb#apiLoaded');
@@ -61,13 +113,183 @@
     },
 
     makePlaylist: function () {
-      // console.log('utb#makePlaylist');
+      console.info('utb#fetch activities');
+
+      var self = this;
+
+      this.getActivities()
+          .then(function () {
+            console.info('utb#fetch video info');
+            return Promise.resolve();
+          })
+          .then(_.bind(this.getVideoInfo, this))
+          .then(function () {
+            console.info('utb#make today\'s playlist');
+            return Promise.resolve();
+          })
+          .then(_.bind(this.makePlayList, this))
+          .then(_.bind(this.makeResult, this))
+          .then(function () {
+            console.info('utb#done');
+            console.log(self.video_activities);
+          });
 
     },
 
-    _request: function (path, params) {
-      // console.log('utb#_request');
+    getActivities: function (path, params) {
+      var self = this;
+      var newPath = path || '/activities';
+      var newParams = params || {
+        part: 'snippet,contentDetails',
+        home: true
+      };
 
+      return this._request(newPath, newParams).then(function (res) {
+        self.activitiy_loaded += res.result.items.length;
+        self.activities = self.activities.concat(self._getVideoActivities(res.result.items));
+
+        // pageInfo.totalResults가 제일 마지막 페이지에 이르기 전까지
+        // 1이 더 많게 나오는 경우가 있음. 그러나 마지막에는 정상적으로 노출되어 정상 동작함.
+        // 왜일까?
+        if (self.activitiy_loaded < res.result.pageInfo.totalResults) {
+          return self.getActivities(newPath, _.defaults({
+            pageToken: res.result.nextPageToken
+          }, newParams));
+        }
+      }, function (reason) {
+        console.log('Error: ' + reason.result.error.message);
+      });
+    },
+
+    _getVideoActivities: function (items) {
+      var self = this;
+
+      return _.filter(items, function (item) {
+        var result = false;
+        var videoId;
+
+        switch (item.snippet.type) {
+        case ACTIVITY_TYPE.RECOMMENDATION:
+          if (CONSTRAINTS.INCLUDE_RECOMMENDATION) {
+            videoId = item.contentDetails.recommendation.resourceId.videoId;
+            self.video_activities[videoId] = item;
+            result = true;
+          }
+          break;
+        case ACTIVITY_TYPE.UPLOAD:
+          videoId = item.contentDetails.upload.videoId;
+          self.video_activities[videoId] = item;
+          result = true;
+          break;
+        }
+        
+        return result;
+      });
+    },
+
+    getVideoInfo: function () {
+      var self = this;
+      var newPath = '/videos';
+      var newParams = {
+        part: 'contentDetails'
+      };
+
+      var targetVideos = this.activities.slice(this.video_loaded, this.video_loaded + MAX_RESULTS_PER_REQUEST);
+
+      var ids = _.map(targetVideos, function (videoInfo) {
+        switch (videoInfo.snippet.type) {
+        case ACTIVITY_TYPE.UPLOAD:
+          return videoInfo.contentDetails.upload.videoId;
+          break;
+        case ACTIVITY_TYPE.RECOMMENDATION:
+          return videoInfo.contentDetails.recommendation.resourceId.videoId;
+          break;  
+        }
+      });
+
+      this.video_loaded += MAX_RESULTS_PER_REQUEST;
+      
+      newParams.id = ids.join(',');
+
+      return this._request(newPath, newParams).then(function (res) {
+        self._addVideoProperties(res.result.items);
+
+        if (self.video_loaded < self.activities.length) {
+          return self.getVideoInfo()
+        }
+      }, function (reason) {
+        console.log('Error: ' + reason.result.error.message);
+      });
+    },
+
+    _addVideoProperties: function (videoInfo) {
+      var self = this;
+      _.each(videoInfo, function (info) {
+        var video = self.video_activities[info.id];
+        video.utbData = {
+          duration: self._getDurationInSec(info.contentDetails.duration),
+          videoId: info.id
+        }
+      });
+    },
+
+    _getDurationInSec: function (duration) {
+      var regexp = /PT((\d+)H)?((\d+)M)?((\d+)S)?/;
+      var result = regexp.exec(duration);
+      var time = 0;
+
+      if (result[2]) {
+        time += parseInt(result[2], 10) * 3600;
+      }
+
+      if (result[4]) {
+        time += parseInt(result[4], 10) * 60;
+      }
+
+      if (result[6]) {
+        time += parseInt(result[6], 10);
+      }
+
+      return time;
+    },
+
+    makePlayList: function () {
+      var self = this;
+      var result = self.video_activities;
+
+      _.each(CONSTRAINTS, function (constraint) {
+        if (!_.isFunction(constraint)) {
+          return;
+        }
+
+        result = _.filter(result, constraint);
+
+      });
+
+      return Promise.resolve(result);
+    },
+
+    makeResult: function (result) {
+      var self = this;
+      var videoCount = _.size(result);
+
+      var template = Handlebars.compile($('#resultTemplate').html());
+      var htmlResult = '';
+    
+      _.each(result, function (item) {
+        self.totalPlayTime += item.utbData.duration;
+      });
+
+      htmlResult = template({
+        videoCount: videoCount,
+        playTime: this.totalPlayTime,
+        avgPlayTime: Math.round(100 * this.totalPlayTime/videoCount) / 100
+      });
+
+      $('#result').html(htmlResult);
+    },
+
+    _request: function (path, params) {
       var self = this;
 
       params = _.extend({
@@ -91,8 +313,19 @@ function initialize() {
 
 </script>
 
-<button id="authorize-button" style="visibility: hidden">인증</button>
+<button id="authorize-button" style="visibility: hidden">인증 후 재생목록 만들기</button>
+<div id="result"></div>
 
+<script id="resultTemplate" type="text/x-handlebars-template">
+<div>
+  <h3>결과</h3>
+  <ul>
+    <li>비디오 수: {{videoCount}}</li>
+    <li>총 플레이 시간: {{playTime}}sec</li>
+    <li>평균 플레이 시간: {{avgPlayTime}}sec</li>
+  </ul>
+</div>
+</script>
 <script src="https://apis.google.com/js/client.js?onload=initialize"></script>
 </body>
 </html>
