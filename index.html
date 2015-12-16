@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-	<title>UTb</title>
+  <title>UTb - Subscription based YouTube playlist generator</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.10.6/moment.min.js"></script>
@@ -68,6 +68,8 @@
     activitiy_loaded: 0,
     video_loaded: 0,
 
+    playList: [],
+
     totalPlayTime: 0,
 
     apiLoaded: function () {
@@ -131,7 +133,6 @@
           .then(_.bind(this.makeResult, this))
           .then(function () {
             console.info('utb#done');
-            console.log(self.video_activities);
           });
 
     },
@@ -263,30 +264,107 @@
         }
 
         result = _.filter(result, constraint);
-
       });
 
-      return Promise.resolve(result);
+      result = _.sortBy(result, function (item) {
+        return moment(item.snippet.publishedAt).format('X');
+      });
+
+      this.playList = result;
+
+      return Promise.resolve();
     },
 
-    makeResult: function (result) {
+    makeResult: function () {
       var self = this;
-      var videoCount = _.size(result);
+      var videoCount = _.size(this.playList);
 
       var template = Handlebars.compile($('#resultTemplate').html());
       var htmlResult = '';
     
-      _.each(result, function (item) {
+      _.each(this.playList, function (item) {
         self.totalPlayTime += item.utbData.duration;
       });
 
       htmlResult = template({
         videoCount: videoCount,
         playTime: this.totalPlayTime,
-        avgPlayTime: Math.round(100 * this.totalPlayTime/videoCount) / 100
+        avgPlayTime: Math.round(100 * this.totalPlayTime/videoCount) / 100,
+        items: this.playList
       });
 
       $('#result').html(htmlResult);
+      $('#uploadPlaylist').on('click', function (e) {
+        e.preventDefault();
+
+        self.uploadPlayList();
+      });
+    },
+
+    uploadPlayList: function () {
+      console.info('utb#make today\'s playlist');
+
+      this.makeYouTubePlayList().then(function () {
+        console.info('utb#make today\'s playlist items');
+        return Promise.resolve(arguments);
+      })
+      .then(_.bind(this.makePlayListItems, this))
+      .then(function () {
+        console.log('utb#done');
+      })
+    },
+
+    makeYouTubePlayList: function () {
+      var self = this;
+      var path = '/playlists';
+      var params = {
+        part: 'snippet,status',
+        resource: {
+          snippet: {
+            title: this.getTitle(),
+            description: this.getDescription()
+          },
+          status: {
+            privacyStatus: 'private'
+          }
+        }
+      };
+
+      return gapi.client.youtube.playlists.insert(params);
+    },
+
+    getTitle: function () {
+      return moment().format('M월 D일의 플레이리스트');
+    },
+
+    getDescription: function () {
+      return this.getTitle() + '를 즐기세요.';
+    },
+
+    makePlayListItems: function (res) {
+      var promise = Promise.resolve();
+
+      var listInfo = res[0].result;
+      var params = {
+        part: 'snippet',
+        snippet: {
+          playlistId: listInfo.id
+        }
+      };
+
+      _.each(this.playList, function (item) {
+        promise = promise.then(function () {
+          var newParams = params;
+          newParams.snippet.resourceId = {
+            videoId: item.utbData.videoId,
+            kind: 'youtube#video'
+          };
+
+          return gapi.client.youtube.playlistItems.insert(newParams);
+        });
+      });
+
+      return promise;
     },
 
     _request: function (path, params) {
@@ -308,6 +386,10 @@
 
 function initialize() {
   console.info('utb#start');
+  gapi.client.load('youtube', 'v3', start)
+}
+
+function start() {
   utb.apiLoaded();
 }
 
@@ -323,6 +405,13 @@ function initialize() {
     <li>비디오 수: {{videoCount}}</li>
     <li>총 플레이 시간: {{playTime}}sec</li>
     <li>평균 플레이 시간: {{avgPlayTime}}sec</li>
+  </ul>
+  <h3>플레이 목록</h3>
+  <button id="uploadPlaylist">아래의 비디오 목록으로 플레이 리스트 서버 저장</button>
+  <ul>
+    {{#each items}}
+    <li><a href="https://www.youtube.com/watch?v={{utbData.videoId}}"><span>[{{snippet.publishedAt}}]{{snippet.title}} ({{utbData.duration}} sec)</span><br><img src="{{snippet.thumbnails.medium.url}}" width="{{snippet.thumbnails.medium.width}}" height="{{snippet.thumbnails.medium.heihgt}}"></a></li>
+    {{/each}}
   </ul>
 </div>
 </script>
