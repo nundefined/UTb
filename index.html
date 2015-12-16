@@ -353,6 +353,8 @@
       };
 
       _.each(this.playList, function (item) {
+        // Promise.all을 사용하여 동시에 여러 요청을 보낼 경우 
+        // api 이슈인지 마지막 값으로 캐시되는 문제가 있어 순차적으로 요청을 보낸다.
         promise = promise.then(function () {
           var newParams = params;
           newParams.snippet.resourceId = {
