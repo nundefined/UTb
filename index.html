@@ -267,7 +267,7 @@
       });
 
       result = _.sortBy(result, function (item) {
-        return moment(item.snippet.publishedAt).format('X');
+        return -1 * moment(item.snippet.publishedAt).format('X');
       });
 
       this.playList = result;
