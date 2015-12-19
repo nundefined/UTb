@@ -1,0 +1,27 @@
+.center_container {
+	margin: auto;
+	width: 640px;
+	text-align: center;
+}
+
+.carousel-caption {
+	right: 5%;
+	left: 5%;
+}
+
+.blink {
+    -webkit-animation: blink 3s ease-in-out infinite;
+            animation: blink 3s ease-in-out infinite;
+}
+@-webkit-keyframes blink { 
+	0% { opacity: 1; }
+	25% { opacity: .5; }
+	50% { opacity: 0; }
+	75% { opacity: .5; }
+}
+@keyframes blink { 
+	0% { opacity: 1; }
+	25% { opacity: .5; }
+	50% { opacity: 0; }
+	75% { opacity: .5; }
+}

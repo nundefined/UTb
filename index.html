@@ -1,18 +1,89 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>UTb - Subscription based YouTube playlist generator</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.10.6/moment.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/handlebars.js/4.0.5/handlebars.min.js"></script>
+  <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.6/js/bootstrap.js"></script>
   <script src="./keys.js"></script>
+  <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.6/css/bootstrap.min.css">
+  <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.6/css/bootstrap-theme.min.css">
+  <link rel="stylesheet" type="text/css" href="utb.css">
 </head>
 <body>
 
+<nav class="navbar navbar-inverse navbar-fixed-top">
+  <div class="container">
+    <div class="navbar-header">
+      <a class="navbar-brand" href="/">UTb</a>
+    </div>
+  </div>
+</nav> 
+
+<div class="jumbotron">
+  <div class="container">
+    <h1>UTb</h1>
+    <p>This is a youtube playlist generator based on your subscription.</p>
+  </div>
+</div>
+
+<div class="container">
+  <div class="center_container">
+    <button type="button" id="btnAuth" class="btn btn-success btn-large btn-block" disabled="disabled">Authorize & Get new video list</button>
+  </div>
+  <div class="center_container">
+    <div style="margin: auto; width:100%; text-align: center;" class="glyphicon glyphicon-menu-down"></div>
+  </div>
+  <div class="center_container">
+    <h5 id="step1">Retrieving new video information</h5>
+  </div>
+  <div class="center_container">
+    <div style="margin: auto; width:100%; text-align: center;" class="glyphicon glyphicon-menu-down"></div>
+  </div>
+  <div class="center_container">
+    <div id="result"></div>
+    <div id="videoList"></div>
+  </div>
+  <!--
+  <div class="center_container">
+    <h5>Playlist options here</h5>
+  </div>
+  -->
+  <div class="center_container">
+    <button type="button" id="btnMakeList" class="btn btn-success btn-large btn-block">Make a playlist and upload to YouTube</a>
+  </div>
+  <div class="center_container">
+    <div style="margin: auto; width:100%; text-align: center;" class="glyphicon glyphicon-menu-down"></div>
+  </div>
+  <div class="center_container">
+    <h5 id="step2">Making a playlist</h5>
+  </div>
+  <div class="center_container">
+    <div style="margin: auto; width:100%; text-align: center;" class="glyphicon glyphicon-menu-down"></div>
+  </div>
+  <div class="center_container">
+    <h5 id="step3">Uploading a playlist to YouTube</h5>
+  </div>
+  <div class="center_container">
+    <div style="margin: auto; width:100%; text-align: center;" class="glyphicon glyphicon-menu-down"></div>
+  </div>
+  <div class="center_container">
+    <h5 id="step4">Done</h5>
+  </div>
+</div>
+<div style="height: 30px;"></div>
 
 <script>
 (function (global) {
+  // TODO 시청한 비디오를 목록 만들 때 제거하는 기능
+  
+  var IN_PROGRESS = 'blink';
+
   var MAX_RESULTS_PER_REQUEST = 50;
   var ACTIVITY_TYPE = {
         BULLETIN: 'bulletin',
@@ -96,14 +167,15 @@
     handleAuthResult: function (authResult) {
       // console.log('utb#handleAuthResult');
 
-      var authorizeButton = document.getElementById('authorize-button');
+      var $authorizeButton = $('#btnAuth');
+
       if (authResult && !authResult.error) {
-        authorizeButton.style.visibility = 'hidden';
-        console.info('utb#Authorized');
+        $authorizeButton.prop('disabled', true);
+        // console.info('utb#Authorized');
         this.makePlaylist();
       } else {
-        authorizeButton.style.visibility = '';
-        authorizeButton.onclick = _.bind(this.handleAuthClick, this);
+        $authorizeButton.prop('disabled', false);
+        $authorizeButton.on('click', _.bind(this.handleAuthClick, this));
       }
     },
 
@@ -115,24 +187,27 @@
     },
 
     makePlaylist: function () {
-      console.info('utb#fetch activities');
+      // console.info('utb#fetch activities');
 
       var self = this;
 
+      $('#step1').addClass(IN_PROGRESS);
+
       this.getActivities()
           .then(function () {
-            console.info('utb#fetch video info');
+            // console.info('utb#fetch video info');
             return Promise.resolve();
           })
           .then(_.bind(this.getVideoInfo, this))
           .then(function () {
-            console.info('utb#make today\'s playlist');
+            // console.info('utb#make today\'s playlist');
             return Promise.resolve();
           })
           .then(_.bind(this.makePlayList, this))
           .then(_.bind(this.makeResult, this))
           .then(function () {
-            console.info('utb#done');
+            // console.info('utb#done');
+            $('#step1').removeClass(IN_PROGRESS);
           });
 
     },
@@ -294,7 +369,11 @@
       });
 
       $('#result').html(htmlResult);
-      $('#uploadPlaylist').on('click', function (e) {
+      $('.carousel-inner').find('.item').first().addClass('active');
+      $('.carousel').carousel({
+        interval: 2000
+      });
+      $('#btnMakeList').on('click', function (e) {
         e.preventDefault();
 
         self.uploadPlayList();
@@ -302,15 +381,21 @@
     },
 
     uploadPlayList: function () {
-      console.info('utb#make today\'s playlist');
+      // console.info('utb#make today\'s playlist');
+
+      $('#step2').addClass(IN_PROGRESS);
 
       this.makeYouTubePlayList().then(function () {
-        console.info('utb#make today\'s playlist items');
+        // console.info('utb#make today\'s playlist items');
+        $('#step2').removeClass(IN_PROGRESS);
+        $('#step3').addClass(IN_PROGRESS);
         return Promise.resolve(arguments);
       })
       .then(_.bind(this.makePlayListItems, this))
       .then(function () {
-        console.log('utb#done');
+        $('#step3').removeClass(IN_PROGRESS);
+        $('#step4').addClass(IN_PROGRESS);
+        // console.log('utb#done');
       })
     },
 
@@ -387,7 +472,7 @@
 })(window);
 
 function initialize() {
-  console.info('utb#start');
+  // console.info('utb#start');
   gapi.client.load('youtube', 'v3', start)
 }
 
@@ -397,24 +482,72 @@ function start() {
 
 </script>
 
-<button id="authorize-button" style="visibility: hidden">인증 후 재생목록 만들기</button>
-<div id="result"></div>
-
 <script id="resultTemplate" type="text/x-handlebars-template">
 <div>
-  <h3>결과</h3>
-  <ul>
-    <li>비디오 수: {{videoCount}}</li>
-    <li>총 플레이 시간: {{playTime}}sec</li>
-    <li>평균 플레이 시간: {{avgPlayTime}}sec</li>
-  </ul>
-  <h3>플레이 목록</h3>
-  <button id="uploadPlaylist">아래의 비디오 목록으로 플레이 리스트 서버 저장</button>
-  <ul>
+  <div class="row">
+    <div class="col-sm-4">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <h3 class="panel-title">Video(s)</h3>
+        </div>
+        <div class="panel-body">
+          {{videoCount}}
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-4">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <h3 class="panel-title">Total Play Time</h3>
+        </div>
+        <div class="panel-body">
+          {{playTime}}sec
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-4">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <h3 class="panel-title">Video Avg. Play Time</h3>
+        </div>
+        <div class="panel-body">
+          {{avgPlayTime}}sec
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="carousel-example-generic" class="carousel slide" data-ride="carousel" style="margin-bottom: 20px;">
+    <div class="carousel-inner" role="listbox">
+      {{#each items}}
+      <div class="item">
+        <img src="{{snippet.thumbnails.standard.url}}" alt="{{snippet.title}}">
+        <div class="carousel-caption">
+          <a href="https://www.youtube.com/watch?v={{utbData.videoId}}" style="color:#fff;text-shadow: 0px 0px 5px #000000;font-size: 22px;"><span>{{snippet.title}}</span></a>
+        </div>
+      </div>
+      {{/each}}
+    </div>
+    <a class="left carousel-control" href="#carousel-example-generic" role="button" data-slide="prev">
+      <span class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span>
+      <span class="sr-only">Previous</span>
+    </a>
+    <a class="right carousel-control" href="#carousel-example-generic" role="button" data-slide="next">
+      <span class="glyphicon glyphicon-chevron-right" aria-hidden="true"></span>
+      <span class="sr-only">Next</span>
+    </a>
+  </div>
+</div>
+</script>
+
+<script id="videoListTemplate" type="text/x-handlebars-template">
     {{#each items}}
     <li><a href="https://www.youtube.com/watch?v={{utbData.videoId}}"><span>[{{snippet.publishedAt}}]{{snippet.title}} ({{utbData.duration}} sec)</span><br><img src="{{snippet.thumbnails.medium.url}}" width="{{snippet.thumbnails.medium.width}}" height="{{snippet.thumbnails.medium.heihgt}}"></a></li>
     {{/each}}
-  </ul>
+</script>
+
+<script id="videoListTemplate" type="text/x-handlebars-template">
+<div>
+  
 </div>
 </script>
 <script src="https://apis.google.com/js/client.js?onload=initialize"></script>
