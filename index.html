@@ -47,13 +47,10 @@
   </div>
   <div class="center_container">
     <div id="result"></div>
+  </div>
+  <div class="center_container">
     <div id="videoList"></div>
   </div>
-  <!--
-  <div class="center_container">
-    <h5>Playlist options here</h5>
-  </div>
-  -->
   <div class="center_container">
     <button type="button" id="btnMakeList" class="btn btn-success btn-large btn-block">Make a playlist and upload to YouTube</a>
   </div>
@@ -512,6 +509,46 @@ function start() {
         </div>
         <div class="panel-body">
           {{avgPlayTime}}sec
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col-sm-12">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <h3 class="panel-title">Filters</h3>
+        </div>
+        <div class="panel-body">
+          <div class="col-sm-4">
+            Max. Play Time (mins)
+            <select class="form-control" id="maxtime">
+              <option value="5">5 min</option>
+              <option value="10">10 min</option>
+              <option value="15">5 min</option>
+              <option value="20">10 min</option>
+              <option value="25">5 min</option>
+              <option value="30">10 min</option>
+            </select>
+          </div>
+          <div class="col-sm-4">
+            Max. Days before
+            <select class="form-control" id="maxday">
+              <option value="1">1 day</option>
+              <option value="2">2 days</option>
+              <option value="3">3 days</option>
+              <option value="4">4 days</option>
+              <option value="5">5 days</option>
+              <option value="6">6 days</option>
+            </select>
+          </div>
+          <div class="col-sm-4">
+            Include Recommendation
+            <select class="form-control" id="recommend">
+              <option value="true">True</option>
+              <option value="false">False</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>
